@@ -31,8 +31,18 @@ def upgrade() -> None:
         "reminder_candidate",
         "unknown",
         name="memory_category",
+        create_type=False,
     )
-    memory_category.create(op.get_bind(), checkfirst=True)
+    postgresql.ENUM(
+        "personal",
+        "work",
+        "learning",
+        "command",
+        "idea",
+        "reminder_candidate",
+        "unknown",
+        name="memory_category",
+    ).create(op.get_bind(), checkfirst=True)
 
     op.create_table(
         "memory_entries",
