@@ -20,7 +20,8 @@ services:
     environment:
       APP_ENV: docker
       DATABASE_URL: postgresql+psycopg://smarn:smarn@db:5432/smarn
-      EMBEDDING_DIMENSIONS: 384
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      EMBEDDING_DIMENSIONS: 1536
       MEMORY_SEARCH_LIMIT: 5
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
     ports:
