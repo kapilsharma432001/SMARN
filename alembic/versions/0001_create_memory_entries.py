@@ -53,7 +53,7 @@ def upgrade() -> None:
             server_default=sa.text("'{}'::text[]"),
             nullable=False,
         ),
-        sa.Column("embedding", Vector(384), nullable=False),
+        sa.Column("embedding", Vector(1536), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),

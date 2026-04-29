@@ -4,14 +4,33 @@ import hashlib
 import math
 from typing import Protocol
 
+from openai import OpenAI
+
 
 class EmbeddingProvider(Protocol):
     def embed(self, text: str) -> list[float]:
         raise NotImplementedError
 
 
+class OpenAIEmbeddingProvider:
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        model: str = "text-embedding-ada-002",
+        dimensions: int = 1536,
+    ) -> None:
+        self._client = OpenAI(api_key=api_key)
+        self._model = model
+        self.dimensions = dimensions
+
+    def embed(self, text: str) -> list[float]:
+        response = self._client.embeddings.create(input=text, model=self._model)
+        return response.data[0].embedding
+
+
 class HashEmbeddingProvider:
-    """Deterministic local embedding used until a model-backed provider is added."""
+    """Deterministic local embedding for tests — not for production use."""
 
     def __init__(self, dimensions: int) -> None:
         self.dimensions = dimensions

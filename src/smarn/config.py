@@ -17,7 +17,8 @@ class Settings(BaseSettings):
     app_env: str = "local"
     database_url: str = "postgresql+psycopg://smarn:smarn@localhost:5432/smarn"
     telegram_bot_token: SecretStr | None = None
-    embedding_dimensions: int = Field(default=384, ge=8)
+    openai_api_key: SecretStr | None = None
+    embedding_dimensions: int = Field(default=1536, ge=8)
     memory_search_limit: int = Field(default=5, ge=1, le=20)
 
 

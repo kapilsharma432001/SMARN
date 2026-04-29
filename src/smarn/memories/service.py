@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from smarn.config import Settings, get_settings
 from smarn.memories.categories import MemoryCategory, coerce_memory_category
-from smarn.memories.embeddings import EmbeddingProvider, HashEmbeddingProvider
+from smarn.memories.embeddings import EmbeddingProvider, OpenAIEmbeddingProvider
 from smarn.memories.repository import MemoryRepository
 
 
@@ -33,9 +33,16 @@ class MemoryService:
     ) -> None:
         self.settings = settings or get_settings()
         self.repository = MemoryRepository(session)
-        self.embedding_provider = embedding_provider or HashEmbeddingProvider(
-            self.settings.embedding_dimensions
-        )
+        if embedding_provider is not None:
+            self.embedding_provider = embedding_provider
+        else:
+            api_key = self.settings.openai_api_key
+            if api_key is None:
+                raise ValueError("OPENAI_API_KEY must be set in the environment.")
+            self.embedding_provider = OpenAIEmbeddingProvider(
+                api_key=api_key.get_secret_value(),
+                dimensions=self.settings.embedding_dimensions,
+            )
 
     def remember(
         self,
