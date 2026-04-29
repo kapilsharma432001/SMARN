@@ -17,7 +17,7 @@ class OpenAIEmbeddingProvider:
         self,
         api_key: str,
         *,
-        model: str = "text-embedding-ada-002",
+        model: str = "text-embedding-3-small",
         dimensions: int = 1536,
     ) -> None:
         self._client = OpenAI(api_key=api_key)
