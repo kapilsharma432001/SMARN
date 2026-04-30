@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -57,3 +59,23 @@ class MemoryRepository:
 
         rows = self.session.execute(statement).all()
         return [(entry, float(score)) for entry, score in rows]
+
+    def list_created_between(
+        self,
+        *,
+        start_at: datetime,
+        end_at: datetime,
+        user_id: str | None = None,
+    ) -> list[MemoryEntry]:
+        statement = (
+            select(MemoryEntry)
+            .where(MemoryEntry.deleted_at.is_(None))
+            .where(MemoryEntry.created_at >= start_at)
+            .where(MemoryEntry.created_at < end_at)
+            .order_by(MemoryEntry.created_at.asc())
+        )
+
+        if user_id is not None:
+            statement = statement.where(MemoryEntry.user_id == user_id)
+
+        return list(self.session.scalars(statement).all())

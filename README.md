@@ -2,8 +2,9 @@
 
 SMARN: Self Memory Archive & Recall Network.
 
-SMARN stores Telegram memories in PostgreSQL with pgvector, enriches saved memories,
-and answers questions through humanized recall over retrieved memories.
+SMARN stores Telegram text and voice memories in PostgreSQL with pgvector,
+enriches saved memories, answers questions through humanized recall, and can
+generate daily or weekly memory reviews.
 
 ## Stack
 
@@ -120,11 +121,16 @@ The API will run migrations on startup and listen at `http://localhost:8000`.
 - `/start` shows a short usage prompt.
 - `/remember <text>` stores and enriches a memory for the Telegram user.
 - `/ask <question>` retrieves relevant memories for that Telegram user and returns a natural answer.
+- Voice notes are transcribed, enriched, and saved as `telegram_voice` memories.
+- `/daily_review` summarizes memories from today.
+- `/weekly_review` summarizes memories from the past 7 days.
 
 ## Notes
 
 `raw_text` is kept unchanged. If LLM enrichment is unavailable, SMARN still saves
 the raw memory with `unknown` category, no tags, and importance score `1`.
+Voice transcription uses the configured transcription provider and does not store
+audio files beyond temporary processing.
 
 ## Tests
 
