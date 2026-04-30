@@ -2,7 +2,8 @@
 
 SMARN: Self Memory Archive & Recall Network.
 
-MVP v0.1 stores Telegram memories in PostgreSQL with pgvector and retrieves relevant memories through `/ask`.
+SMARN stores Telegram memories in PostgreSQL with pgvector, enriches saved memories,
+and answers questions through humanized recall over retrieved memories.
 
 ## Stack
 
@@ -40,6 +41,7 @@ raw_text
 summary
 category
 tags
+importance_score
 embedding
 created_at
 updated_at
@@ -116,12 +118,13 @@ The API will run migrations on startup and listen at `http://localhost:8000`.
 ## Bot commands
 
 - `/start` shows a short usage prompt.
-- `/remember <text>` stores a memory for the Telegram user.
-- `/ask <question>` retrieves the closest stored memories for that Telegram user.
+- `/remember <text>` stores and enriches a memory for the Telegram user.
+- `/ask <question>` retrieves relevant memories for that Telegram user and returns a natural answer.
 
 ## Notes
 
-The MVP uses a deterministic local hash embedding provider so the pgvector storage and retrieval path works without adding an external AI provider yet. Replace `HashEmbeddingProvider` when adding production embeddings.
+`raw_text` is kept unchanged. If LLM enrichment is unavailable, SMARN still saves
+the raw memory with `unknown` category, no tags, and importance score `1`.
 
 ## Tests
 

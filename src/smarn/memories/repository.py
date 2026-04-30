@@ -21,6 +21,7 @@ class MemoryRepository:
         summary: str | None = None,
         category: MemoryCategory = MemoryCategory.UNKNOWN,
         tags: list[str] | None = None,
+        importance_score: int = 1,
     ) -> MemoryEntry:
         entry = MemoryEntry(
             user_id=user_id,
@@ -29,6 +30,7 @@ class MemoryRepository:
             summary=summary,
             category=category,
             tags=tags or [],
+            importance_score=importance_score,
             source=source,
         )
         self.session.add(entry)
