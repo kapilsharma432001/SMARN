@@ -60,7 +60,34 @@ class VoiceMemoryService:
         source: str = "telegram_voice",
     ) -> VoiceIngestionResult:
         try:
+            logger.info(
+                "voice_transcription_started",
+                extra={
+                    "user_id": user_id,
+                    "source": source,
+                    "audio_path": str(audio_path),
+                    "audio_bytes": audio_path.stat().st_size,
+                    "provider": self.transcription_provider.__class__.__name__,
+                },
+            )
             transcript = self.transcription_provider.transcribe(audio_path)
+            logger.info(
+                "voice_transcription_completed",
+                extra={
+                    "user_id": user_id,
+                    "source": source,
+                    "transcript_length": len(transcript),
+                    "transcript_preview": _truncate(transcript, max_length=120),
+                },
+            )
+            logger.info(
+                "voice_memory_save_started",
+                extra={
+                    "user_id": user_id,
+                    "source": source,
+                    "transcript_length": len(transcript),
+                },
+            )
             memory = self.memory_service.remember_with_details(
                 transcript,
                 user_id=user_id,

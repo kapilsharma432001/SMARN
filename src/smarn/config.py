@@ -15,6 +15,7 @@ class Settings(BaseSettings):
 
     app_name: str = "SMARN"
     app_env: str = "local"
+    log_level: str = "INFO"
     database_url: str = "postgresql+psycopg://smarn:smarn@localhost:5432/smarn"
     telegram_bot_token: SecretStr | None = None
     openai_api_key: SecretStr | None = None

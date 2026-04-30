@@ -106,6 +106,9 @@ export TELEGRAM_BOT_TOKEN=your-token
 python -m smarn.telegram.bot
 ```
 
+Bot logs are written to stdout as structured JSON. Use `LOG_LEVEL=DEBUG` or
+`LOG_LEVEL=INFO` to control verbosity.
+
 ## Docker Compose
 
 Run the API and database together:
