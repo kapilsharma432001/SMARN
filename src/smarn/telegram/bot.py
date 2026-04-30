@@ -53,20 +53,12 @@ async def ask(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     with session_scope() as session:
-        results = MemoryService(session).ask(
+        answer = MemoryService(session).ask(
             question,
             user_id=_telegram_user_id(update),
         )
 
-    if not results:
-        await update.effective_message.reply_text("No memories found yet.")
-        return
-
-    lines = ["Relevant memories:"]
-    for index, result in enumerate(results, start=1):
-        lines.append(f"{index}. {result.summary or result.raw_text}")
-
-    await update.effective_message.reply_text("\n".join(lines))
+    await update.effective_message.reply_text(answer.text)
 
 
 def build_application(token: str | None = None) -> Application:

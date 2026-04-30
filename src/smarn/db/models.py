@@ -4,7 +4,17 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, Enum, Index, String, Text, func, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Enum,
+    Index,
+    Integer,
+    String,
+    Text,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,6 +26,10 @@ from smarn.memories.categories import MemoryCategory, memory_category_values
 class MemoryEntry(Base):
     __tablename__ = "memory_entries"
     __table_args__ = (
+        CheckConstraint(
+            "importance_score >= 1 AND importance_score <= 5",
+            name="ck_memory_entries_importance_score_range",
+        ),
         Index("ix_memory_entries_created_at", "created_at"),
         Index("ix_memory_entries_deleted_at", "deleted_at"),
     )
@@ -44,6 +58,12 @@ class MemoryEntry(Base):
         nullable=False,
         default=list,
         server_default=text("'{}'::text[]"),
+    )
+    importance_score: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default=text("1"),
     )
     embedding: Mapped[list[float]] = mapped_column(
         Vector(get_settings().embedding_dimensions),
