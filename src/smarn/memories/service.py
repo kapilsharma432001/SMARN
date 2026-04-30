@@ -40,6 +40,16 @@ class MemoryAnswer:
     memories: list[MemorySearchResult]
 
 
+@dataclass(frozen=True)
+class RememberedMemory:
+    id: uuid.UUID
+    raw_text: str
+    summary: str | None
+    category: MemoryCategory
+    tags: list[str]
+    importance_score: int
+
+
 class MemoryService:
     def __init__(
         self,
@@ -90,6 +100,27 @@ class MemoryService:
         tags: list[str] | None = None,
         importance_score: int | None = None,
     ) -> uuid.UUID:
+        return self.remember_with_details(
+            raw_text,
+            user_id=user_id,
+            source=source,
+            summary=summary,
+            category=category,
+            tags=tags,
+            importance_score=importance_score,
+        ).id
+
+    def remember_with_details(
+        self,
+        raw_text: str,
+        *,
+        user_id: str | None = None,
+        source: str = "telegram",
+        summary: str | None = None,
+        category: MemoryCategory | str | None = None,
+        tags: list[str] | None = None,
+        importance_score: int | None = None,
+    ) -> RememberedMemory:
         cleaned = raw_text.strip()
         if not cleaned:
             raise ValueError("Memory content cannot be empty.")
@@ -129,7 +160,14 @@ class MemoryService:
                 "importance_score": entry.importance_score,
             },
         )
-        return entry.id
+        return RememberedMemory(
+            id=entry.id,
+            raw_text=entry.raw_text,
+            summary=entry.summary,
+            category=entry.category,
+            tags=entry.tags,
+            importance_score=entry.importance_score,
+        )
 
     def search(
         self,
