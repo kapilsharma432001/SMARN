@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     embedding_dimensions: int = Field(default=1536, ge=8)
     memory_search_limit: int = Field(default=5, ge=1, le=20)
     memory_relevance_max_distance: float = Field(default=0.75, ge=0.0, le=2.0)
-    review_timezone: str = "UTC"
+    review_timezone: str = "Asia/Kolkata"
 
 
 @lru_cache
