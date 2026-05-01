@@ -1,37 +1,46 @@
 services:
   db:
     image: pgvector/pgvector:pg16
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: smarn
-      POSTGRES_USER: smarn
-      POSTGRES_PASSWORD: smarn
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: ${POSTGRES_DB:-smarn}
+      POSTGRES_USER: ${POSTGRES_USER:-smarn}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-smarn}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U smarn -d smarn"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-smarn} -d $${POSTGRES_DB:-smarn}"]
       interval: 5s
       timeout: 5s
       retries: 10
 
   api:
     build: .
+    restart: unless-stopped
+    env_file: .env
     environment:
       APP_ENV: docker
-      DATABASE_URL: postgresql+psycopg://smarn:smarn@db:5432/smarn
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      EMBEDDING_DIMENSIONS: 1536
-      MEMORY_SEARCH_LIMIT: 5
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-smarn}:${POSTGRES_PASSWORD:-smarn}@db:5432/${POSTGRES_DB:-smarn}
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       db:
         condition: service_healthy
     command: >
       sh -c "alembic upgrade head &&
       uvicorn smarn.main:create_app --factory --host 0.0.0.0 --port 8000"
+
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      APP_ENV: docker
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-smarn}:${POSTGRES_PASSWORD:-smarn}@db:5432/${POSTGRES_DB:-smarn}
+    depends_on:
+      db:
+        condition: service_healthy
+    command: python -m smarn.telegram.bot
 
 volumes:
   pgdata:
