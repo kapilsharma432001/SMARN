@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -90,7 +91,14 @@ class AnalyticsAnswer:
 
 
 class AnalyticsPlanningError(ValueError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        planner_response_length: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.planner_response_length = planner_response_length
 
 
 class AnalyticsPlannerService:
@@ -110,39 +118,48 @@ class AnalyticsPlannerService:
         now: datetime | None = None,
     ) -> AnalyticsPlan:
         current = now or datetime.now(timezone.utc)
-        response = self._llm_provider.complete(
-            system_prompt=(
-                "You are the analytics planner for SMARN, a private memory app. "
-                "Return strict JSON only. Do not answer the user's question. "
-                "Convert the question into a plan with keys: answer_type, "
-                "date_range, observation_types, memory_categories, filters, "
-                "group_by, limit, needs_raw_memories. answer_type must be one of "
-                "count, list, summary, trend, unknown. observation_types may include "
-                "wake_time, sleep_time, food_intake, exercise, mood, work_activity, "
-                "learning_activity, health_event. filter operators may include "
-                "equals, contains, contains_any, less_than, greater_than, "
-                "greater_than_or_equal, less_than_or_equal, metadata_true. "
-                "For wake/sleep times use value_number minutes after midnight. "
-                "For wake after 10 AM use field value_number, operator "
-                "greater_than_or_equal, value 600. For food categories use "
-                "metadata_true with fields like processed_food, sweet, junk_food, "
-                "outside_food, healthy_food. For DSA or system design study "
-                "questions use learning_activity and raw memories when useful."
-            ),
-            user_prompt=json.dumps(
-                {
-                    "question": question,
-                    "now": current.isoformat(),
-                    "timezone": self.settings.review_timezone,
-                },
-                ensure_ascii=False,
-            ),
-        )
-        return normalize_analytics_plan(
-            response,
-            now=current,
-            settings=self.settings,
-        )
+        response: str | None = None
+        try:
+            response = self._llm_provider.complete(
+                system_prompt=(
+                    "You are the analytics planner for SMARN, a private memory app. "
+                    "Return strict JSON only. Do not answer the user's question. "
+                    "Convert the question into a plan with keys: answer_type, "
+                    "date_range, observation_types, memory_categories, filters, "
+                    "group_by, limit, needs_raw_memories. answer_type must be one of "
+                    "count, list, summary, trend, unknown. observation_types may include "
+                    "wake_time, sleep_time, food_intake, exercise, mood, work_activity, "
+                    "learning_activity, health_event. filter operators may include "
+                    "equals, contains, contains_any, less_than, greater_than, "
+                    "greater_than_or_equal, less_than_or_equal, metadata_true. "
+                    "For wake/sleep times use value_number minutes after midnight. "
+                    "For wake after 10 AM use field value_number, operator "
+                    "greater_than_or_equal, value 600. For food categories use "
+                    "metadata_true with fields like processed_food, sweet, junk_food, "
+                    "outside_food, healthy_food. For DSA or system design study "
+                    "questions use learning_activity and raw memories when useful."
+                ),
+                user_prompt=json.dumps(
+                    {
+                        "question": question,
+                        "now": current.isoformat(),
+                        "timezone": self.settings.review_timezone,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+            return normalize_analytics_plan(
+                response,
+                now=current,
+                settings=self.settings,
+            )
+        except AnalyticsPlanningError as error:
+            if error.planner_response_length is not None or response is None:
+                raise
+            raise AnalyticsPlanningError(
+                str(error),
+                planner_response_length=len(response),
+            ) from error
 
 
 class AnalyticsSynthesisService:
@@ -248,27 +265,40 @@ class AnalyticsService:
         current = now or datetime.now(timezone.utc)
         try:
             plan = self.planner_service.plan(cleaned, now=current)
-        except Exception:
-            logger.exception("analytics_planning_failed")
-            fallback_range = parse_date_range(
+        except Exception as error:
+            _log_planning_failure(error, user_id=user_id)
+            plan = fallback_analytics_plan(
                 cleaned,
                 now=current,
                 settings=self.settings,
             )
-            return AnalyticsAnswer(
-                text=f"{ANALYTICS_UNSUPPORTED} {ANALYTICS_CAVEAT}",
-                observation_count=0,
-                memory_count=0,
-                date_range=fallback_range,
-            )
+            if plan is None:
+                fallback_range = parse_date_range(
+                    cleaned,
+                    now=current,
+                    settings=self.settings,
+                )
+                return AnalyticsAnswer(
+                    text=f"{ANALYTICS_UNSUPPORTED} {ANALYTICS_CAVEAT}",
+                    observation_count=0,
+                    memory_count=0,
+                    date_range=fallback_range,
+                )
 
         if plan.answer_type == "unknown":
-            return AnalyticsAnswer(
-                text=f"{ANALYTICS_UNSUPPORTED} {ANALYTICS_CAVEAT}",
-                observation_count=0,
-                memory_count=0,
-                date_range=plan.date_range,
+            fallback_plan = fallback_analytics_plan(
+                cleaned,
+                now=current,
+                settings=self.settings,
             )
+            if fallback_plan is None:
+                return AnalyticsAnswer(
+                    text=f"{ANALYTICS_UNSUPPORTED} {ANALYTICS_CAVEAT}",
+                    observation_count=0,
+                    memory_count=0,
+                    date_range=plan.date_range,
+                )
+            plan = fallback_plan
 
         observations = self.observation_repository.list_for_analytics(
             user_id=user_id,
@@ -306,7 +336,7 @@ class AnalyticsService:
                 text = f"{INSUFFICIENT_DATA} {ANALYTICS_CAVEAT}"
             else:
                 text = (
-                    f"Logged count: {count} time"
+                    f"You logged this {count} time"
                     f"{'' if count == 1 else 's'} in {plan.date_range.label}. "
                     f"{ANALYTICS_CAVEAT}"
                 )
@@ -391,12 +421,12 @@ def normalize_analytics_plan(
         except (TypeError, ValueError):
             raise AnalyticsPlanningError("limit must be an integer.") from None
         if limit < 1:
-            raise AnalyticsPlanningError("limit must be positive.")
-        limit = min(limit, 100)
+            limit = None
+        else:
+            limit = min(limit, 100)
 
     needs_raw_memories = data.get("needs_raw_memories", False)
-    if not isinstance(needs_raw_memories, bool):
-        raise AnalyticsPlanningError("needs_raw_memories must be boolean.")
+    needs_raw_memories = _coerce_bool(needs_raw_memories)
 
     return AnalyticsPlan(
         answer_type=answer_type,
@@ -420,6 +450,14 @@ def parse_date_range(
     timezone_info = ZoneInfo(settings.review_timezone)
     local_now = now.astimezone(timezone_info)
     lowered = question.lower()
+    today_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    if "yesterday" in lowered:
+        start = today_start - timedelta(days=1)
+        return _date_range(start, today_start, "yesterday")
+
+    if "today" in lowered:
+        return _date_range(today_start, local_now, "today")
 
     if "last month" in lowered or "this month" in lowered:
         local_month_start = local_now.replace(
@@ -440,6 +478,19 @@ def parse_date_range(
             return _date_range(start, local_month_start, "last month")
         return _date_range(local_month_start, local_now, "this month")
 
+    if "last week" in lowered:
+        this_week_start = (local_now - timedelta(days=local_now.weekday())).replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        return _date_range(
+            this_week_start - timedelta(days=7),
+            this_week_start,
+            "last week",
+        )
+
     if "this week" in lowered:
         start = (local_now - timedelta(days=local_now.weekday())).replace(
             hour=0,
@@ -452,7 +503,7 @@ def parse_date_range(
     if "last 7 days" in lowered:
         return _date_range(local_now - timedelta(days=7), local_now, "the last 7 days")
 
-    if "last 30 days" in lowered:
+    if "last 30 days" in lowered or "past 30 days" in lowered:
         return _date_range(local_now - timedelta(days=30), local_now, "the last 30 days")
 
     if "last 1 month" in lowered or "past month" in lowered:
@@ -464,11 +515,8 @@ def parse_date_range(
 def _parse_plan_payload(content: str | dict[str, object]) -> dict[str, object]:
     if isinstance(content, dict):
         return content
-    cleaned = content.strip()
-    try:
-        parsed = json.loads(cleaned)
-    except json.JSONDecodeError as error:
-        raise AnalyticsPlanningError("Planner did not return strict JSON.") from error
+    cleaned = _strip_json_fence(content.strip())
+    parsed = _decode_first_json_object(cleaned)
     if not isinstance(parsed, dict):
         raise AnalyticsPlanningError("Planner JSON must be an object.")
     return parsed
@@ -497,6 +545,8 @@ def _normalize_date_range(
 def _normalize_observation_types(value: object) -> list[str]:
     if value is None:
         return []
+    if isinstance(value, str):
+        value = [value]
     if not isinstance(value, list):
         raise AnalyticsPlanningError("observation_types must be a list.")
     observation_types: list[str] = []
@@ -511,6 +561,8 @@ def _normalize_observation_types(value: object) -> list[str]:
 def _normalize_memory_categories(value: object) -> list[MemoryCategory] | None:
     if value is None:
         return None
+    if isinstance(value, str):
+        value = [value]
     if not isinstance(value, list):
         raise AnalyticsPlanningError("memory_categories must be a list or null.")
     categories: list[MemoryCategory] = []
@@ -527,6 +579,8 @@ def _normalize_memory_categories(value: object) -> list[MemoryCategory] | None:
 def _normalize_filters(value: object) -> list[AnalyticsFilter]:
     if value is None:
         return []
+    if isinstance(value, dict):
+        value = [value]
     if not isinstance(value, list):
         raise AnalyticsPlanningError("filters must be a list.")
     filters: list[AnalyticsFilter] = []
@@ -552,6 +606,169 @@ def _normalize_filters(value: object) -> list[AnalyticsFilter]:
             )
         )
     return filters
+
+
+def fallback_analytics_plan(
+    question: str,
+    *,
+    now: datetime,
+    settings: Settings | None = None,
+) -> AnalyticsPlan | None:
+    lowered = _compact_question(question)
+    date_range = parse_date_range(question, now=now, settings=settings)
+
+    if "wake" in lowered and _contains_time_direction(lowered, "before", "8"):
+        return _count_plan(
+            date_range=date_range,
+            observation_types=["wake_time"],
+            filters=[
+                AnalyticsFilter("value_number", "less_than", 480),
+            ],
+        )
+
+    if "wake" in lowered and _contains_time_direction(lowered, "after", "10"):
+        return _count_plan(
+            date_range=date_range,
+            observation_types=["wake_time"],
+            filters=[
+                AnalyticsFilter("value_number", "greater_than_or_equal", 600),
+            ],
+        )
+
+    if "dsa" in lowered and ("problem" in lowered or "problems" in lowered):
+        return AnalyticsPlan(
+            answer_type="count",
+            date_range=date_range,
+            observation_types=["learning_activity"],
+            memory_categories=[MemoryCategory.LEARNING],
+            filters=[
+                AnalyticsFilter(
+                    "search_text",
+                    "contains_any",
+                    ["DSA", "LeetCode", "problem", "problems", "solved"],
+                ),
+            ],
+            group_by=None,
+            limit=None,
+            needs_raw_memories=True,
+        )
+
+    if "system design" in lowered and ("study" in lowered or "studied" in lowered):
+        return AnalyticsPlan(
+            answer_type="list",
+            date_range=date_range,
+            observation_types=["learning_activity"],
+            memory_categories=[MemoryCategory.LEARNING],
+            filters=[
+                AnalyticsFilter("search_text", "contains", "system design"),
+            ],
+            group_by="topic",
+            limit=20,
+            needs_raw_memories=True,
+        )
+
+    if "food" in lowered or "sweet" in lowered or "sweets" in lowered:
+        metadata_key = _food_metadata_key(lowered)
+        if metadata_key is None:
+            return None
+        return _count_plan(
+            date_range=date_range,
+            observation_types=["food_intake"],
+            filters=[
+                AnalyticsFilter(f"metadata.{metadata_key}", "metadata_true", None),
+            ],
+        )
+
+    return None
+
+
+def _strip_json_fence(content: str) -> str:
+    cleaned = content.strip()
+    if not cleaned.startswith("```"):
+        return cleaned
+
+    first_newline = cleaned.find("\n")
+    if first_newline == -1:
+        return cleaned.removeprefix("```").removesuffix("```").strip()
+    body = cleaned[first_newline + 1 :]
+    if body.rstrip().endswith("```"):
+        body = body.rstrip()[:-3]
+    return body.strip()
+
+
+def _decode_first_json_object(content: str) -> object:
+    decoder = json.JSONDecoder()
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        parsed = None
+    if isinstance(parsed, dict):
+        return parsed
+
+    for index, char in enumerate(content):
+        if char != "{":
+            continue
+        try:
+            parsed, _ = decoder.raw_decode(content[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    raise AnalyticsPlanningError("Planner response did not contain a JSON object.")
+
+
+def _log_planning_failure(error: Exception, *, user_id: str | None) -> None:
+    logger.warning(
+        "analytics_planning_failed",
+        extra={
+            "error_type": error.__class__.__name__,
+            "planner_response_length": getattr(
+                error,
+                "planner_response_length",
+                None,
+            ),
+            "user_id": user_id,
+        },
+    )
+
+
+def _count_plan(
+    *,
+    date_range: DateRange,
+    observation_types: list[str],
+    filters: list[AnalyticsFilter],
+) -> AnalyticsPlan:
+    return AnalyticsPlan(
+        answer_type="count",
+        date_range=date_range,
+        observation_types=observation_types,
+        memory_categories=None,
+        filters=filters,
+        group_by=None,
+        limit=None,
+        needs_raw_memories=False,
+    )
+
+
+def _compact_question(question: str) -> str:
+    normalized = question.lower().replace("a.m.", "am").replace("p.m.", "pm")
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _contains_time_direction(question: str, direction: str, hour: str) -> bool:
+    return re.search(rf"\b{direction}\s+{hour}\s*(?:am)?\b", question) is not None
+
+
+def _food_metadata_key(question: str) -> str | None:
+    if "processed" in question:
+        return "processed_food"
+    if "outside" in question:
+        return "outside_food"
+    if "sweet" in question or "sweets" in question:
+        return "sweet"
+    if "junk" in question:
+        return "junk_food"
+    return None
 
 
 def _date_range(start: datetime, end: datetime, label: str) -> DateRange:
@@ -596,7 +813,11 @@ def _matches_filter(
     field = analytics_filter.field
     if analytics_filter.operator == "metadata_true":
         metadata = _metadata(item)
-        key = analytics_filter.value if isinstance(analytics_filter.value, str) else field
+        key = (
+            analytics_filter.value
+            if isinstance(analytics_filter.value, str)
+            else field
+        )
         key = key.removeprefix("metadata.")
         return metadata.get(key) is True
 
@@ -647,6 +868,18 @@ def _matches_filter(
 
 
 def _field_value(item: object, field: str, *, data_kind: str) -> object:
+    if field == "search_text":
+        return " ".join(
+            value
+            for value in [
+                getattr(item, "label", None),
+                getattr(item, "value_text", None),
+                getattr(item, "summary", None),
+                getattr(item, "raw_text", None),
+                " ".join(str(tag) for tag in getattr(item, "tags", []) or []),
+            ]
+            if isinstance(value, str)
+        )
     if field.startswith("metadata."):
         return _metadata(item).get(field.removeprefix("metadata."))
     if data_kind == "memory" and field == "value_text":
@@ -694,6 +927,16 @@ def _normalize_text(value: object) -> str:
     if isinstance(value, MemoryCategory):
         value = value.value
     return str(value or "").strip().lower()
+
+
+def _coerce_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "yes", "y", "1"}
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return False
 
 
 def _observation_payload(observation: object) -> dict[str, object]:
