@@ -1,6 +1,6 @@
 """add indexes and memory observations
 
-Revision ID: 0003_add_indexes_and_observations
+Revision ID: 0003_observations_indexes
 Revises: 0002_add_memory_importance_score
 Create Date: 2026-05-01 00:00:00.000000
 
@@ -10,75 +10,59 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from alembic import context, op
-import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
-revision: str = "0003_add_indexes_and_observations"
+revision: str = "0003_observations_indexes"
 down_revision: str | None = "0002_add_memory_importance_score"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "memory_observations",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("memory_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("user_id", sa.String(length=64), nullable=True),
-        sa.Column("observation_type", sa.String(length=64), nullable=False),
-        sa.Column("label", sa.String(length=255), nullable=True),
-        sa.Column("value_text", sa.Text(), nullable=True),
-        sa.Column("value_number", sa.Numeric(), nullable=True),
-        sa.Column("unit", sa.String(length=64), nullable=True),
-        sa.Column("occurred_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("confidence", sa.Float(), nullable=False),
-        sa.Column(
-            "metadata",
-            postgresql.JSONB(astext_type=sa.Text()),
-            server_default=sa.text("'{}'::jsonb"),
-            nullable=False,
-        ),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.CheckConstraint(
-            "confidence >= 0 AND confidence <= 1",
-            name="ck_memory_observations_confidence_range",
-        ),
-        sa.ForeignKeyConstraint(
-            ["memory_id"],
-            ["memory_entries.id"],
-            ondelete="CASCADE",
-        ),
-        sa.PrimaryKeyConstraint("id"),
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS memory_observations (
+            id UUID NOT NULL,
+            memory_id UUID NOT NULL,
+            user_id VARCHAR(64),
+            observation_type VARCHAR(64) NOT NULL,
+            label VARCHAR(255),
+            value_text TEXT,
+            value_number NUMERIC,
+            unit VARCHAR(64),
+            occurred_at TIMESTAMP WITH TIME ZONE,
+            confidence FLOAT NOT NULL,
+            metadata JSONB DEFAULT '{}'::jsonb NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+            PRIMARY KEY (id),
+            CONSTRAINT ck_memory_observations_confidence_range
+                CHECK (confidence >= 0 AND confidence <= 1),
+            FOREIGN KEY(memory_id) REFERENCES memory_entries (id) ON DELETE CASCADE
+        )
+        """
     )
-    op.create_index(
-        op.f("ix_memory_observations_user_id"),
-        "memory_observations",
-        ["user_id"],
-        unique=False,
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_memory_observations_user_id
+        ON memory_observations (user_id)
+        """
     )
-    op.create_index(
-        "ix_memory_observations_user_type_occurred",
-        "memory_observations",
-        ["user_id", "observation_type", "occurred_at"],
-        unique=False,
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_memory_observations_user_type_occurred
+        ON memory_observations (user_id, observation_type, occurred_at)
+        """
     )
-    op.create_index(
-        "ix_memory_observations_user_created",
-        "memory_observations",
-        ["user_id", "created_at"],
-        unique=False,
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_memory_observations_user_created
+        ON memory_observations (user_id, created_at)
+        """
     )
-    op.create_index(
-        "ix_memory_observations_metadata_gin",
-        "memory_observations",
-        ["metadata"],
-        unique=False,
-        postgresql_using="gin",
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_memory_observations_metadata_gin
+        ON memory_observations USING gin (metadata)
+        """
     )
 
     with context.get_context().autocommit_block():
@@ -130,20 +114,8 @@ def downgrade() -> None:
             "DROP INDEX CONCURRENTLY IF EXISTS ix_memory_entries_user_created_desc"
         )
 
-    op.drop_index(
-        "ix_memory_observations_metadata_gin",
-        table_name="memory_observations",
-    )
-    op.drop_index(
-        "ix_memory_observations_user_created",
-        table_name="memory_observations",
-    )
-    op.drop_index(
-        "ix_memory_observations_user_type_occurred",
-        table_name="memory_observations",
-    )
-    op.drop_index(
-        op.f("ix_memory_observations_user_id"),
-        table_name="memory_observations",
-    )
-    op.drop_table("memory_observations")
+    op.execute("DROP INDEX IF EXISTS ix_memory_observations_metadata_gin")
+    op.execute("DROP INDEX IF EXISTS ix_memory_observations_user_created")
+    op.execute("DROP INDEX IF EXISTS ix_memory_observations_user_type_occurred")
+    op.execute("DROP INDEX IF EXISTS ix_memory_observations_user_id")
+    op.execute("DROP TABLE IF EXISTS memory_observations")
