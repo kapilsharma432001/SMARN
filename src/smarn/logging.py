@@ -10,6 +10,7 @@ from typing import Any
 from smarn.config import Settings, get_settings
 
 _TELEGRAM_BOT_TOKEN_PATTERN = re.compile(r"/bot([^/\s\"]+)")
+_OPENAI_API_KEY_PATTERN = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b")
 
 _STANDARD_LOG_RECORD_KEYS = {
     "args",
@@ -80,7 +81,8 @@ def configure_logging(settings: Settings | None = None) -> None:
 
 def _redact_sensitive_values(value: Any) -> Any:
     if isinstance(value, str):
-        return _TELEGRAM_BOT_TOKEN_PATTERN.sub("/bot[REDACTED]", value)
+        redacted = _TELEGRAM_BOT_TOKEN_PATTERN.sub("/bot[REDACTED]", value)
+        return _OPENAI_API_KEY_PATTERN.sub("sk-[REDACTED]", redacted)
     if isinstance(value, dict):
         return {key: _redact_sensitive_values(item) for key, item in value.items()}
     if isinstance(value, list):

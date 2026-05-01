@@ -16,17 +16,28 @@ from telegram.ext import (
 from smarn.config import get_settings
 from smarn.db.session import session_scope
 from smarn.logging import configure_logging
+from smarn.memories.analytics import AnalyticsService
 from smarn.memories.review import ReviewService
 from smarn.memories.service import MemoryService
 from smarn.memories.voice import VoiceMemoryService, format_voice_confirmation
+from smarn.telegram.voice_questions import PendingVoiceQuestionStore
 
 logger = logging.getLogger(__name__)
+VOICE_QUESTION_STORE_KEY = "voice_question_store"
 
 
 def _telegram_user_id(update: Update) -> str | None:
     if update.effective_user is None:
         return None
     return str(update.effective_user.id)
+
+
+def _voice_question_store(context: ContextTypes.DEFAULT_TYPE) -> PendingVoiceQuestionStore:
+    store = context.application.bot_data.get(VOICE_QUESTION_STORE_KEY)
+    if not isinstance(store, PendingVoiceQuestionStore):
+        store = PendingVoiceQuestionStore()
+        context.application.bot_data[VOICE_QUESTION_STORE_KEY] = store
+    return store
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -36,7 +47,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     await update.effective_message.reply_text(
         "SMARN is ready. Use /remember <text>, voice notes, /ask <question>, "
-        "/daily_review, or /weekly_review."
+        "/ask_voice, /analyze <question>, /daily_review, or /weekly_review."
     )
 
 
@@ -55,7 +66,6 @@ async def remember(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         extra={
             "user_id": user_id,
             "message_id": update.effective_message.message_id,
-            "text_length": len(content),
         },
     )
 
@@ -91,7 +101,6 @@ async def ask(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         extra={
             "user_id": user_id,
             "message_id": update.effective_message.message_id,
-            "question_length": len(question),
         },
     )
 
@@ -112,6 +121,57 @@ async def ask(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.effective_message.reply_text(answer.text)
 
 
+async def ask_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.effective_message is None:
+        return
+
+    user_id = _telegram_user_id(update)
+    if user_id is None:
+        await update.effective_message.reply_text(
+            "I could not identify your Telegram user."
+        )
+        return
+
+    _voice_question_store(context).mark_pending(user_id)
+    logger.info(
+        "telegram_ask_voice_pending_created",
+        extra={"user_id": user_id, "message_id": update.effective_message.message_id},
+    )
+    await update.effective_message.reply_text("Send your voice question now.")
+
+
+async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.effective_message is None:
+        return
+
+    question = " ".join(context.args).strip()
+    if not question:
+        await update.effective_message.reply_text("Usage: /analyze <question>")
+        return
+
+    user_id = _telegram_user_id(update)
+    logger.info(
+        "telegram_analyze_received",
+        extra={
+            "user_id": user_id,
+            "message_id": update.effective_message.message_id,
+        },
+    )
+
+    with session_scope() as session:
+        answer = AnalyticsService(session).analyze(question, user_id=user_id)
+
+    logger.info(
+        "telegram_analyze_completed",
+        extra={
+            "user_id": user_id,
+            "message_id": update.effective_message.message_id,
+            "observation_count": answer.observation_count,
+        },
+    )
+    await update.effective_message.reply_text(answer.text)
+
+
 async def voice_note(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_message is None or update.effective_message.voice is None:
         return
@@ -125,11 +185,8 @@ async def voice_note(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         extra={
             "user_id": user_id,
             "message_id": message_id,
-            "file_id": voice.file_id,
-            "file_unique_id": voice.file_unique_id,
             "duration_seconds": voice.duration,
             "file_size": voice.file_size,
-            "mime_type": voice.mime_type,
         },
     )
 
@@ -141,18 +198,14 @@ async def voice_note(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
                 extra={
                     "user_id": user_id,
                     "message_id": message_id,
-                    "file_id": voice.file_id,
                 },
             )
-            telegram_file = await context.bot.get_file(
-                voice.file_id
-            )
+            telegram_file = await context.bot.get_file(voice.file_id)
             logger.info(
                 "telegram_voice_download_started",
                 extra={
                     "user_id": user_id,
                     "message_id": message_id,
-                    "file_id": voice.file_id,
                 },
             )
             await telegram_file.download_to_drive(custom_path=audio_path)
@@ -161,16 +214,27 @@ async def voice_note(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
                 extra={
                     "user_id": user_id,
                     "message_id": message_id,
-                    "file_id": voice.file_id,
-                    "downloaded_bytes": audio_path.stat().st_size,
+                    "file_size": audio_path.stat().st_size,
                 },
             )
 
             with session_scope() as session:
-                result = VoiceMemoryService(session).remember_voice(
-                    audio_path,
-                    user_id=user_id,
-                )
+                voice_service = VoiceMemoryService(session)
+                if _voice_question_store(context).consume_if_pending(user_id):
+                    question_result = voice_service.ask_voice(
+                        audio_path,
+                        user_id=user_id,
+                    )
+                    if not question_result.answered or question_result.answer is None:
+                        await update.effective_message.reply_text(
+                            question_result.error_message
+                            or "I could not answer that voice question."
+                        )
+                        return
+                    await update.effective_message.reply_text(question_result.answer.text)
+                    return
+
+                result = voice_service.remember_voice(audio_path, user_id=user_id)
     except Exception:
         logger.exception(
             "telegram_voice_processing_failed",
@@ -270,6 +334,8 @@ def build_application(token: str | None = None) -> Application:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("remember", remember))
     application.add_handler(CommandHandler("ask", ask))
+    application.add_handler(CommandHandler("ask_voice", ask_voice))
+    application.add_handler(CommandHandler("analyze", analyze))
     application.add_handler(CommandHandler("daily_review", daily_review))
     application.add_handler(CommandHandler("weekly_review", weekly_review))
     application.add_handler(MessageHandler(filters.VOICE, voice_note))

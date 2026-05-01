@@ -45,7 +45,6 @@ class MemoryEnrichmentService:
                 "memory_enrichment_completed",
                 extra={
                     "category": enrichment.category.value,
-                    "importance_score": enrichment.importance_score,
                     "tag_count": len(enrichment.tags),
                 },
             )
