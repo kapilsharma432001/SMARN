@@ -219,6 +219,11 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# SMARN deployment/runtime artifacts
+backups/
+*.dump
+*.sql
+
 
 # Docs MD folder
 /docs_md

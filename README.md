@@ -111,13 +111,20 @@ Bot logs are written to stdout as structured JSON. Use `LOG_LEVEL=DEBUG` or
 
 ## Docker Compose
 
-Run the API and database together:
+Run the database, API, and Telegram bot together:
 
 ```bash
 docker compose up --build
 ```
 
-The API will run migrations on startup and listen at `http://localhost:8000`.
+The API runs migrations on startup and listens on `http://127.0.0.1:8000`.
+PostgreSQL is not exposed publicly.
+
+For 24/7 VPS deployment, see:
+
+```text
+docs/deployment/oracle-free-vm.md
+```
 
 ## Bot commands
 
