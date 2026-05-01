@@ -140,7 +140,7 @@ docs/deployment/oracle-free-vm.md
 `raw_text` is kept unchanged. If LLM enrichment is unavailable, SMARN still saves
 the raw memory with `unknown` category, no tags, and importance score `1`.
 Voice transcription uses the configured transcription provider and does not store
-audio files beyond temporary processing.
+audio files beyond temporary processing. 
 
 ## Tests
 
