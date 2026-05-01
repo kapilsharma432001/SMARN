@@ -162,9 +162,7 @@ class MemoryService:
             extra={
                 "memory_id": str(entry.id),
                 "user_id": user_id,
-                "source": source,
                 "category": entry.category.value,
-                "importance_score": entry.importance_score,
             },
         )
         self._extract_observations(entry_id=entry.id, user_id=user_id, raw_text=cleaned)

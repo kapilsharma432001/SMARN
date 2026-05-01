@@ -66,7 +66,6 @@ async def remember(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         extra={
             "user_id": user_id,
             "message_id": update.effective_message.message_id,
-            "text_length": len(content),
         },
     )
 
@@ -102,7 +101,6 @@ async def ask(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         extra={
             "user_id": user_id,
             "message_id": update.effective_message.message_id,
-            "question_length": len(question),
         },
     )
 
@@ -157,7 +155,6 @@ async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         extra={
             "user_id": user_id,
             "message_id": update.effective_message.message_id,
-            "question_length": len(question),
         },
     )
 
@@ -170,7 +167,6 @@ async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "user_id": user_id,
             "message_id": update.effective_message.message_id,
             "observation_count": answer.observation_count,
-            "memory_count": answer.memory_count,
         },
     )
     await update.effective_message.reply_text(answer.text)
@@ -189,11 +185,8 @@ async def voice_note(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         extra={
             "user_id": user_id,
             "message_id": message_id,
-            "file_id": voice.file_id,
-            "file_unique_id": voice.file_unique_id,
             "duration_seconds": voice.duration,
             "file_size": voice.file_size,
-            "mime_type": voice.mime_type,
         },
     )
 
@@ -205,18 +198,14 @@ async def voice_note(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
                 extra={
                     "user_id": user_id,
                     "message_id": message_id,
-                    "file_id": voice.file_id,
                 },
             )
-            telegram_file = await context.bot.get_file(
-                voice.file_id
-            )
+            telegram_file = await context.bot.get_file(voice.file_id)
             logger.info(
                 "telegram_voice_download_started",
                 extra={
                     "user_id": user_id,
                     "message_id": message_id,
-                    "file_id": voice.file_id,
                 },
             )
             await telegram_file.download_to_drive(custom_path=audio_path)
@@ -225,8 +214,7 @@ async def voice_note(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
                 extra={
                     "user_id": user_id,
                     "message_id": message_id,
-                    "file_id": voice.file_id,
-                    "downloaded_bytes": audio_path.stat().st_size,
+                    "file_size": audio_path.stat().st_size,
                 },
             )
 

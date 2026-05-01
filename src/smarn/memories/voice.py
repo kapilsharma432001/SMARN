@@ -72,10 +72,7 @@ class VoiceMemoryService:
                 "voice_transcription_started",
                 extra={
                     "user_id": user_id,
-                    "source": source,
-                    "audio_path": str(audio_path),
-                    "audio_bytes": audio_path.stat().st_size,
-                    "provider": self.transcription_provider.__class__.__name__,
+                    "file_size": audio_path.stat().st_size,
                 },
             )
             transcript = self.transcription_provider.transcribe(audio_path)
@@ -83,16 +80,13 @@ class VoiceMemoryService:
                 "voice_transcription_completed",
                 extra={
                     "user_id": user_id,
-                    "source": source,
                     "transcript_length": len(transcript),
-                    "transcript_preview": _truncate(transcript, max_length=120),
                 },
             )
             logger.info(
                 "voice_memory_save_started",
                 extra={
                     "user_id": user_id,
-                    "source": source,
                     "transcript_length": len(transcript),
                 },
             )
@@ -106,7 +100,6 @@ class VoiceMemoryService:
                 extra={
                     "memory_id": str(memory.id),
                     "user_id": user_id,
-                    "source": source,
                     "category": memory.category.value,
                     "tag_count": len(memory.tags),
                 },
@@ -115,7 +108,7 @@ class VoiceMemoryService:
         except Exception:
             logger.exception(
                 "voice_memory_failed",
-                extra={"user_id": user_id, "source": source},
+                extra={"user_id": user_id},
             )
             return VoiceIngestionResult(
                 saved=False,
@@ -136,9 +129,7 @@ class VoiceMemoryService:
                 "voice_question_transcription_started",
                 extra={
                     "user_id": user_id,
-                    "audio_path": str(audio_path),
-                    "audio_bytes": audio_path.stat().st_size,
-                    "provider": self.transcription_provider.__class__.__name__,
+                    "file_size": audio_path.stat().st_size,
                 },
             )
             transcript = self.transcription_provider.transcribe(audio_path)
@@ -147,7 +138,6 @@ class VoiceMemoryService:
                 extra={
                     "user_id": user_id,
                     "transcript_length": len(transcript),
-                    "transcript_preview": _truncate(transcript, max_length=120),
                 },
             )
             answer = self.memory_service.ask(transcript, user_id=user_id)

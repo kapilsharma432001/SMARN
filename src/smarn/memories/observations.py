@@ -26,6 +26,7 @@ FOOD_CATEGORY_KEYS = {
     "processed_food",
     "sweet",
     "junk_food",
+    "outside_food",
     "healthy_food",
     "vegetarian",
 }
@@ -59,8 +60,8 @@ class ObservationExtractionService:
                     "minutes after midnight and unit to minutes_after_midnight. For "
                     "food_intake, set label to the food item and metadata booleans "
                     "when applicable: processed_food, sweet, junk_food, healthy_food, "
-                    "vegetarian. Include confidence from 0 to 1. Use null when a "
-                    "field is unknown. Do not rewrite the raw memory."
+                    "vegetarian, outside_food. Include confidence from 0 to 1. Use "
+                    "null when a field is unknown. Do not rewrite the raw memory."
                 ),
                 user_prompt=json.dumps({"raw_text": raw_text}, ensure_ascii=False),
             )
