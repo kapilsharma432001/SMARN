@@ -45,4 +45,4 @@ jobs:
             -p "${{ secrets.SMARN_SERVER_PORT }}" \
             -o StrictHostKeyChecking=accept-new \
             "${{ secrets.SMARN_SERVER_USER }}@${{ secrets.SMARN_SERVER_HOST }}" \
-            "cd '${{ secrets.SMARN_APP_DIR }}' && ./scripts/deploy.sh"
+            "cd '${{ secrets.SMARN_APP_DIR }}' && bash scripts/deploy.sh"

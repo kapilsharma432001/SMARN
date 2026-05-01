@@ -92,12 +92,15 @@ Keep this file out of Git. The repository `.gitignore` excludes `.env`.
 Docker Compose builds the internal `DATABASE_URL` for `api` and `bot` from the
 Postgres values above so containers connect to `db:5432`.
 
+For now, keep `POSTGRES_PASSWORD` URL-safe and alphanumeric because Docker
+Compose builds `DATABASE_URL` from it.
+
 ## 5. Run the first deployment manually
 
 From the repo directory on the server:
 
 ```bash
-./scripts/deploy.sh
+bash scripts/deploy.sh
 ```
 
 The script:
@@ -167,7 +170,7 @@ docker compose logs -f bot
 Backups are manual for now:
 
 ```bash
-./scripts/backup_db.sh
+bash scripts/backup_db.sh
 ```
 
 Backup files are written under:
@@ -189,7 +192,9 @@ scp ubuntu@YOUR_SERVER_IP:~/apps/SMARN/backups/smarn_YYYYMMDDTHHMMSSZ.dump .
 Restore is intentionally manual and asks for confirmation:
 
 ```bash
-./scripts/restore_db.sh backups/smarn_YYYYMMDDTHHMMSSZ.dump
+docker compose stop api bot
+bash scripts/restore_db.sh backups/smarn_YYYYMMDDTHHMMSSZ.dump
+docker compose up -d api bot
 ```
 
 Do not run restore unless you are intentionally replacing the current database
@@ -232,9 +237,9 @@ belong only in the server `.env`.
 
 Two workflows are included:
 
-- `.github/workflows/ci.yml` runs tests for pull requests and pushes to `main`.
+- `.github/workflows/ci.yml` runs tests for pull requests.
 - `.github/workflows/deploy.yml` runs tests on pushes to `main`, then SSHes to
-  the server and runs `./scripts/deploy.sh`.
+  the server and runs `bash scripts/deploy.sh`.
 
 Deployment is conservative:
 
