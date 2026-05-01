@@ -17,7 +17,8 @@ from smarn.memories.categories import MemoryCategory, coerce_memory_category
 from smarn.memories.embeddings import EmbeddingProvider, OpenAIEmbeddingProvider
 from smarn.memories.enrichment import MemoryEnrichmentService
 from smarn.memories.llm import LLMProvider, OpenAILLMProvider, UnavailableLLMProvider
-from smarn.memories.repository import MemoryRepository
+from smarn.memories.observations import ObservationExtractionService
+from smarn.memories.repository import MemoryRepository, ObservationRepository
 
 logger = logging.getLogger(__name__)
 
@@ -58,11 +59,13 @@ class MemoryService:
         embedding_provider: EmbeddingProvider | None = None,
         llm_provider: LLMProvider | None = None,
         enrichment_service: MemoryEnrichmentService | None = None,
+        observation_extraction_service: ObservationExtractionService | None = None,
         answer_synthesis_service: AnswerSynthesisService | None = None,
         settings: Settings | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.repository = MemoryRepository(session)
+        self.observation_repository = ObservationRepository(session)
         if embedding_provider is not None:
             self.embedding_provider = embedding_provider
         else:
@@ -84,6 +87,10 @@ class MemoryService:
                 )
         self.enrichment_service = enrichment_service or MemoryEnrichmentService(
             llm_provider
+        )
+        self.observation_extraction_service = (
+            observation_extraction_service
+            or ObservationExtractionService(llm_provider)
         )
         self.answer_synthesis_service = (
             answer_synthesis_service or AnswerSynthesisService(llm_provider)
@@ -160,6 +167,7 @@ class MemoryService:
                 "importance_score": entry.importance_score,
             },
         )
+        self._extract_observations(entry_id=entry.id, user_id=user_id, raw_text=cleaned)
         return RememberedMemory(
             id=entry.id,
             raw_text=entry.raw_text,
@@ -238,6 +246,35 @@ class MemoryService:
             ],
         )
         return MemoryAnswer(text=answer, memories=relevant_results)
+
+    def _extract_observations(
+        self,
+        *,
+        entry_id: uuid.UUID,
+        user_id: str | None,
+        raw_text: str,
+    ) -> None:
+        try:
+            observations = self.observation_extraction_service.extract(raw_text)
+            self.observation_repository.create_many(
+                memory_id=entry_id,
+                user_id=user_id,
+                observations=observations,
+            )
+            if observations:
+                logger.info(
+                    "memory_observations_saved",
+                    extra={
+                        "memory_id": str(entry_id),
+                        "user_id": user_id,
+                        "observation_count": len(observations),
+                    },
+                )
+        except Exception:
+            logger.exception(
+                "memory_observation_extraction_ignored",
+                extra={"memory_id": str(entry_id), "user_id": user_id},
+            )
 
 
 def _normalize_importance_score(value: int) -> int:

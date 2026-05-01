@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from smarn.config import Settings, get_settings
 from smarn.memories.categories import MemoryCategory
-from smarn.memories.service import MemoryService, RememberedMemory
+from smarn.memories.service import MemoryAnswer, MemoryService, RememberedMemory
 from smarn.memories.transcription import (
     OpenAITranscriptionProvider,
     TranscriptionProvider,
@@ -23,6 +23,14 @@ class VoiceIngestionResult:
     saved: bool
     error_message: str | None = None
     memory: RememberedMemory | None = None
+
+
+@dataclass(frozen=True)
+class VoiceQuestionResult:
+    answered: bool
+    answer: MemoryAnswer | None = None
+    transcript: str | None = None
+    error_message: str | None = None
 
 
 class VoiceMemoryService:
@@ -114,6 +122,54 @@ class VoiceMemoryService:
                 error_message=(
                     "I could not transcribe that voice note. Please try again "
                     "or send it as text."
+                ),
+            )
+
+    def ask_voice(
+        self,
+        audio_path: Path,
+        *,
+        user_id: str | None = None,
+    ) -> VoiceQuestionResult:
+        try:
+            logger.info(
+                "voice_question_transcription_started",
+                extra={
+                    "user_id": user_id,
+                    "audio_path": str(audio_path),
+                    "audio_bytes": audio_path.stat().st_size,
+                    "provider": self.transcription_provider.__class__.__name__,
+                },
+            )
+            transcript = self.transcription_provider.transcribe(audio_path)
+            logger.info(
+                "voice_question_transcription_completed",
+                extra={
+                    "user_id": user_id,
+                    "transcript_length": len(transcript),
+                    "transcript_preview": _truncate(transcript, max_length=120),
+                },
+            )
+            answer = self.memory_service.ask(transcript, user_id=user_id)
+            logger.info(
+                "voice_question_answered",
+                extra={
+                    "user_id": user_id,
+                    "retrieved_memory_count": len(answer.memories),
+                },
+            )
+            return VoiceQuestionResult(
+                answered=True,
+                answer=answer,
+                transcript=transcript,
+            )
+        except Exception:
+            logger.exception("voice_question_failed", extra={"user_id": user_id})
+            return VoiceQuestionResult(
+                answered=False,
+                error_message=(
+                    "I could not answer that voice question. Please try again "
+                    "or send it as text with /ask."
                 ),
             )
 
